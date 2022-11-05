@@ -107,7 +107,7 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
         #Devido a ter a opção -e específicada, vamos ter apenas um ficheiro, este dividido pelo número de processos em ficheiros mais pequenos. 
         #Assim somamos os valores do número das ocorrências e do número de linhas encontradas para as variáveis partilhadas
         if args.e:
-            palavras_encontradas[0  ] += numero_palavras
+            palavras_encontradas[0 ] += numero_palavras
             linhas_encontradas[0] += numero_linhas
 
         #Devido a termos mais que um ficheiro, guardamos os valores do número das ocorrências e do número de linhas encontradas no índice correspondente ao ficheiro na lista args.ficheiros
