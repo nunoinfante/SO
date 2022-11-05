@@ -1,4 +1,4 @@
-### Grupo: SO-TI-XX
+### Grupo: SO-TI-32
 ### Aluno 1: Nuno Infante (fc55411)
 
 from threading import Thread
@@ -165,10 +165,11 @@ def main():
     else:
         pgrepwc(args)
 
-    palavras_total = sum(palavras_encontradas)
-    linhas_total = sum(linhas_encontradas)
-
     if len(args.ficheiros) > 1 or args.e and args.processos > 1:
+        
+        palavras_total = sum(palavras_encontradas)
+        linhas_total = sum(linhas_encontradas)  
+        
         print("\nNo total, em todos os ficheiros foram encontradas:")
         
         if args.c:
@@ -177,6 +178,7 @@ def main():
             print(f"{linhas_total} linhas com a palavra {args.palavra}")  
 
 if __name__ == "__main__":
+
     palavras_encontradas = []
     linhas_encontradas = []
 

@@ -1,7 +1,7 @@
-### Grupo: SO-TI-XX
+### Grupo: SO-TI-38
 ### Aluno 1: Nuno Infante (fc55411)
 
-from multiprocessing import Process, Array, Value
+from multiprocessing import Process, Array
 import argparse
 import unicodedata
 import os
@@ -95,11 +95,9 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
     Args:
         args: objeto da classe ArgumentParser, com os argumentos dados pelo utilizador
         ficheiros: lista de strings, com o nome dos ficheiros onde vamos procurar
-        palavras_encontradas: caso a opção -e esteja específicada então palavras_encontradas vai ser um int,
-                              caso contrário vai ser uma lista com o número de ocorrências para cada ficheiro
+        palavras_encontradas: ista com o número de ocorrências para cada ficheiro
                               Este argumento está alocado na memória partilhada
-        linhas_encontradas: caso a opção -e esteja específicada então linhas_encontradas vai ser um int,
-                            caso contrário vai ser uma lista com o número de linhas encontradas para cada ficheiro
+        linhas_encontradas: lista com o número de linhas encontradas para cada ficheiro
                             Este argumento está alocado na memória partilhada
     """
     for ficheiro in ficheiros:
@@ -109,8 +107,8 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
         #Devido a ter a opção -e específicada, vamos ter apenas um ficheiro, este dividido pelo número de processos em ficheiros mais pequenos. 
         #Assim somamos os valores do número das ocorrências e do número de linhas encontradas para as variáveis partilhadas
         if args.e:
-            palavras_encontradas.value += numero_palavras
-            linhas_encontradas.value += numero_linhas
+            palavras_encontradas[0  ] += numero_palavras
+            linhas_encontradas[0] += numero_linhas
 
         #Devido a termos mais que um ficheiro, guardamos os valores do número das ocorrências e do número de linhas encontradas no índice correspondente ao ficheiro na lista args.ficheiros
         else:
@@ -130,7 +128,7 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
         if args.l: 
             print(f"{numero_linhas} linhas com a palavra {args.palavra}")
 
-def divide_ficheiro(args):
+def dividir_ficheiro(args):
     """
     Caso a opção -e esteja específicada, dividimos o ficheiro principal pelo número de processos específicados.
     Por exemplo, se um ficheiro tiver 29 linhas e se forem específicados 2 processos, o primeiro processo vai ficar com as 15 primeiras linhas 
@@ -173,20 +171,35 @@ def divide_ficheiro(args):
                 
 
 def dividir_tarefas(args):
+    """
+    Distribui os ficheiros a serem procurados pelo número de processos.
+    Os ficheiros são distribuídos uniformemente por cada processo. Por exemplo, dados 3 ficheiros e 2 processos, 
+    os ficheiros 1 e 2 vão para o primeiro processo e o ficheiro 3 vai para o segundo processo    
     
+    Args:
+        args: objeto da classe ArgumentParser, com os argumentos dados pelo utilizador
+
+    Returns: 
+        lista com várias listas contendo strings dos nomes dos ficheiros a serem procurados, para cada processo
+
+    """
+
+    #Caso a opção -e seja específicada, então dividimos o ficheiro em ficheiros mais pequenos usando a função dividir_ficheiro.
     if args.e:
         tarefas = []
-        tarefas = divide_ficheiro(args)
+        tarefas = dividir_ficheiro(args)
 
     else:
         num_ficheiros = len(args.ficheiros)
         num_processos = args.processos
         tarefas =  [ []*num_processos for i in range(num_processos)]
 
+        #Se o número de processos for maior ou igual que o número de ficheiros então o número de processos é o número de ficheiros a pesquisar
         if num_processos >= num_ficheiros:
             args.processos = num_ficheiros
             tarefas = [[ficheiro] for ficheiro in args.ficheiros]
 
+        #Se o número de processso for menor que o número de ficheiros então distribuímos os ficheiros aos processos uniformemente
         elif num_processos < num_ficheiros:
             tarefas_processo = [num_ficheiros // num_processos for _ in range(num_processos)]
             tarefas_extra = num_ficheiros % num_processos
@@ -203,6 +216,19 @@ def dividir_tarefas(args):
     return tarefas
 
 def pgrepwc(args, palavras_encontradas, linhas_encontradas):
+    """
+    Executa a função grepwc de forma paralela criando o número de processos filho indicado nos argumentos dados pelo utilizador
+
+    Args:
+        args: objeto da classe ArgumentParser, com os argumentos dados pelo utilizador
+        palavras_encontradas: caso a opção -e esteja específicada então palavras_encontradas vai ser um int,
+                              caso contrário vai ser uma lista com o número de ocorrências para cada ficheiro
+                              Este argumento está alocado na memória partilhada
+        linhas_encontradas: caso a opção -e esteja específicada então linhas_encontradas vai ser um int,
+                            caso contrário vai ser uma lista com o número de linhas encontradas para cada ficheiro
+                            Este argumento está alocado na memória partilhada
+    """
+
     tarefas = dividir_tarefas(args)
     processos_filho = []
 
@@ -215,6 +241,7 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
     for i in range(args.processos):
         processos_filho[i].join()
 
+    #Caso a opção -e seja específicada, então removemos os ficheiros criados pela função dividir_ficheiro
     if args.e:
         for file in tarefas:
             os.remove(file[0])
@@ -222,35 +249,33 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
 
 def main():
     print('Programa: pgrepwc_processos.py')
-    
-    args = obter_argumentos()
-    
-    if args.e:
-        palavras_encontradas =  Value('i', 0)
-        linhas_encontradas = Value('i', 0)
-    else:
-        palavras_encontradas = Array('i', len(args.ficheiros))
-        linhas_encontradas = Array('i', len(args.ficheiros))
 
+    args = obter_argumentos()
+
+    #Criamos dois arrays que vão estar na memória partilhada para cada ficheiro a ser pesquisado,
+    #um para as palavras encontradas e outro para as linahs encontradas 
+    palavras_encontradas = Array('i', len(args.ficheiros))
+    linhas_encontradas = Array('i', len(args.ficheiros))
+
+    #Se o número de processos for igual a 1 então o processo pai faz a pesquisa
     if args.processos == 1:
         grepwc(args, args.ficheiros, palavras_encontradas, linhas_encontradas)
     else:
         pgrepwc(args, palavras_encontradas, linhas_encontradas)
 
-    palavras_total = 0
-    linhas_total = 0
+    #Se o número de ficheiros for maior que 1 então calculamos as palavras e as linhas totais encontradas.
+    #Também se aplica caso a opção -e seja específicada
+    if len(args.ficheiros) > 1 or args.e and args.processos > 1:
 
-    if args.e:
-        palavras_total = palavras_encontradas.value
-        linhas_total = linhas_encontradas.value
-    else:    
+        palavras_total = 0
+        linhas_total = 0
+
         for i in range(len(args.ficheiros)):
             palavras_total += palavras_encontradas[i]
             linhas_total += linhas_encontradas[i]
-
-    if len(args.ficheiros) > 1 or args.e and args.processos > 1:
+    
         print("\nNo total, em todos os ficheiros foram encontradas:")
-        
+
         if args.c:
             print(f"{palavras_total} ocorrencias da palavra {args.palavra}")
         if args.l: 
