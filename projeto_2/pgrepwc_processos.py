@@ -158,6 +158,19 @@ def dividir_ficheiro(args):
 
     return novos_ficheiros
                 
+def get_size_process(tarefas, dict):
+    res = []
+    for p in tarefas:
+        counter = 0
+        if len(p) == 0:
+            res.append(0)
+        else:
+            for f in p:
+                counter += dict.get(f)
+            res.append(counter)
+    return res.index(min(res))
+
+
 
 def dividir_tarefas(args):
     """
@@ -188,18 +201,17 @@ def dividir_tarefas(args):
 
         #Se o número de processso for menor que o número de ficheiros então distribuímos os ficheiros aos processos uniformemente
         elif num_processos < num_ficheiros:
-            tarefas_processo = [num_ficheiros // num_processos for _ in range(num_processos)]
-            tarefas_extra = num_ficheiros % num_processos
-            for i in range(tarefas_extra):
-                tarefas_processo[i] += 1 
-
-            count = 0
-            for i in range(num_processos):
-                for _ in range(tarefas_processo[i]):
-                    tarefas[i].append(args.ficheiros[count])
-                    count += 1
-                    
-
+            dict = {}
+            for f in args.ficheiros:
+                dict[f] = os.stat(f).st_size / 1000
+            dict = {k: v for k, v in sorted(dict.items(), key=lambda item: item[1])}
+            dict2 = dict.copy()
+            
+            while len(dict) != 0:
+                index_min = get_size_process(tarefas, dict2)
+                tarefas[index_min].append(list(dict.keys())[-1])
+                dict.popitem()
+        print(tarefas)
     return tarefas
 
 def pgrepwc(args, palavras_encontradas, linhas_encontradas):

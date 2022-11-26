@@ -1,7 +1,7 @@
 import os
 
 def get_size_process(tarefas, dict):
-    res = [[]*len(tarefas) for i in range(len(tarefas))]
+    res = []
     for p in tarefas:
         counter = 0
         if len(p) == 0:
@@ -10,9 +10,9 @@ def get_size_process(tarefas, dict):
             for f in p:
                 counter += dict.get(f)
             res.append(counter)
-    return res
+    return res.index(min(res))
 
-files = ['file4.txt', 'file5.txt', 'file3.txt', 'file2.txt']
+files = ['file4.txt', 'file5.txt', 'file3.txt', 'file2.txt', 'file6.txt']
 
 #1
 num_processos = 3
@@ -23,11 +23,11 @@ dict = {}
 for f in files:
     dict[f] = os.stat(f).st_size / 1000
 dict = {k: v for k, v in sorted(dict.items(), key=lambda item: item[1])}
-
+dict2 = dict.copy()
 #3
 while len(dict) != 0:
-    index_min = tarefas.index(min(tarefas))
-    tarefas[index_min].append(list(dict.values())[-1])
+    index_min = get_size_process(tarefas, dict2)
+    tarefas[index_min].append(list(dict.keys())[-1])
     dict.popitem()
-    
+
 print(tarefas)
