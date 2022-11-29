@@ -30,24 +30,22 @@ def produtor(files):
             list.append(s)
             i += 1
             if i == linesFromFiles(files):
-                    print('BB')
                     f = open(f'file_temp_{j}.txt', 'w')
                     f.writelines(list)
             elif getBytesFromStringList(list) > bytes:
-                print('AA')
                 f = open(f'file_temp_{j}.txt', 'w')
                 j += 1
                 f.writelines(list[:-1])
                 list = list[-1:]
-bytes = 50
-files = ['file5.txt', 'file6.txt']
-# print(f'Bytes: {bytesFromFiles(files)}')
-# print(f'Lines: {linesFromFiles(files)}')
+
+bytes = 8000
+files = ['file4.txt']
+
 produtor(files)
+print(bytesFromFiles(files))
+counter = 0
+for i in range(3):
+    print(os.stat(f'file_temp_{i+1}.txt').st_size)
+    counter += os.stat(f'file_temp_{i+1}.txt').st_size
 
-# counter = 0
-# for i in range(3):
-#     print(os.stat(f'file_temp_{i+1}.txt').st_size)
-#     counter += os.stat(f'file_temp_{i+1}.txt').st_size
-
-# print(f'Total: {counter}')
+print(f'Total: {counter}')

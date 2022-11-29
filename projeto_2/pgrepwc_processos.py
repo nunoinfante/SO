@@ -1,7 +1,7 @@
 ### Grupo: SO-TI-38
 ### Aluno 1: Nuno Infante (fc55411)
 
-from multiprocessing import Process, Array, Queue
+from multiprocessing import Process, Array, Queue, Lock
 import argparse
 import unicodedata
 import os
@@ -23,7 +23,7 @@ def obter_argumentos():
     parser.add_argument("-c", action="store_true")
     parser.add_argument("-l", action="store_true")
     parser.add_argument("-p", "--processos", default=1, type=int, required=False)
-    parser.add_argument("-e", "--bytes")
+    parser.add_argument("-e", "--bytes", type=int)
     
     #Argumentos posicionais
     #No argumento 'palavra' é guardada uma string e no argumento 'ficheiros' é guardada uma ou várias strings numa lista
@@ -172,22 +172,49 @@ def dividir_tarefas(args):
 
     return tarefas
 
-def getBytesFromStringList(list):
+def numberBytes(list):
     counter = 0
     for s in list:
         counter += len(s.encode('utf8'))
     return counter
 
+def numberLines(files):
+    counter = 0
+    for f in files:
+        file = open(f, 'r')
+        counter += len(file.readlines())
+    return counter
+
 def produtor(args, queue, files):
+    # mutex = Lock()
     list = []
+    i = 0
+    j = 1
     for f in files:
         texto = open(f, 'r').readlines()
-        for i, s in enumerate(texto):
-            if getBytesFromStringList(list) + len(texto[i+1].encode('utf8')) > args.bytes:
-                queue.put(list)
-                list = []
-            else:
-                list.append(s)
+        for s in texto:
+            list.append(s)
+            i += 1
+            if i == numberLines(files):
+                    f = open(f'file_temp_{j}.txt', 'w')
+                    f.writelines(list)
+                    # mutex.acquire()
+                    queue.put(f)
+                    # mutex.release()
+            elif numberBytes(list) > args.bytes:
+                f = open(f'file_temp_{j}.txt', 'w')
+                j += 1
+                f.writelines(list[:-1])
+                # mutex.acquire()
+                queue.put(f)
+                # mutex.release()
+                list = list[-1:]
+
+def consumidor(args, queue):
+    while True:
+        item = queue.get()
+        print(item)
+    
 
 def pgrepwc(args, palavras_encontradas, linhas_encontradas):
     """
@@ -205,18 +232,18 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
     processos_filho = []
 
     if args.bytes:
-        q = Queue()
+        queue = Queue()
 
         for i in range(args.processos):
-            processos_filho.append(Process(target=consumer))
+            processos_filho.append(Process(target=consumidor, args = (args, queue)))
 
+        producer = Process(target=produtor, args = (args, queue, args.ficheiros))
+
+        producer.start()
         for consumer in processos_filho:
             consumer.start()
-
-        producer = Process(target=producer)
-        producer.start()
+        
         producer.join()
-
         for consumer in processos_filho:
             consumer.join()
 
@@ -233,9 +260,9 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
             processos_filho[i].join()
 
     #Caso a opção -e seja específicada, então removemos os ficheiros criados pela função dividir_ficheiro
-    if args.bytes:
-        for file in tarefas:
-            os.remove(file[0])
+    # if args.bytes:
+    #     for file in tarefas:
+    #         os.remove(file[0])
 
 
 def main():
