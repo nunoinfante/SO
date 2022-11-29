@@ -1,33 +1,53 @@
 import os
 
-def get_size_process(tarefas, dict):
-    res = []
-    for p in tarefas:
-        counter = 0
-        if len(p) == 0:
-            res.append(0)
-        else:
-            for f in p:
-                counter += dict.get(f)
-            res.append(counter)
-    return res.index(min(res))
+def bytesFromFiles(files):
+    counter = 0
+    for f in files:
+        counter += os.stat(f).st_size
+    return counter
 
-files = ['file4.txt', 'file5.txt', 'file3.txt', 'file2.txt', 'file6.txt']
+def linesFromFiles(files):
+    counter = 0
+    for f in files:
+        file = open(f, 'r')
+        counter += len(file.readlines())
+    return counter
 
-#1
-num_processos = 3
-tarefas = [[]*num_processos for i in range(num_processos)]
+def getBytesFromStringList(list):
+    counter = 0
+    for s in list:
+        counter += len(s.encode('utf8'))
+    return counter
 
-#2
-dict = {}
-for f in files:
-    dict[f] = os.stat(f).st_size / 1000
-dict = {k: v for k, v in sorted(dict.items(), key=lambda item: item[1])}
-dict2 = dict.copy()
-#3
-while len(dict) != 0:
-    index_min = get_size_process(tarefas, dict2)
-    tarefas[index_min].append(list(dict.keys())[-1])
-    dict.popitem()
+#produtor
+def produtor(files):
+    list = []
+    i = 0
+    j = 1
+    for f in files:
+        texto = open(f, 'r').readlines()
+        for s in texto:
+            list.append(s)
+            i += 1
+            if i == linesFromFiles(files):
+                    print('BB')
+                    f = open(f'file_temp_{j}.txt', 'w')
+                    f.writelines(list)
+            elif getBytesFromStringList(list) > bytes:
+                print('AA')
+                f = open(f'file_temp_{j}.txt', 'w')
+                j += 1
+                f.writelines(list[:-1])
+                list = list[-1:]
+bytes = 50
+files = ['file5.txt', 'file6.txt']
+# print(f'Bytes: {bytesFromFiles(files)}')
+# print(f'Lines: {linesFromFiles(files)}')
+produtor(files)
 
-print(tarefas)
+# counter = 0
+# for i in range(3):
+#     print(os.stat(f'file_temp_{i+1}.txt').st_size)
+#     counter += os.stat(f'file_temp_{i+1}.txt').st_size
+
+# print(f'Total: {counter}')

@@ -1,7 +1,7 @@
 ### Grupo: SO-TI-38
 ### Aluno 1: Nuno Infante (fc55411)
 
-from multiprocessing import Process, Array
+from multiprocessing import Process, Array, Queue
 import argparse
 import unicodedata
 import os
@@ -48,7 +48,7 @@ def obter_argumentos():
 def remover_acentos(texto):
     return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode("utf-8").lower()
 
-def encontrar_palavras(palavra, ficheiro):
+def encontrar_palavras(palavra, texto):
     """
     Procura num ficheiro a palavra
     Args:
@@ -59,12 +59,10 @@ def encontrar_palavras(palavra, ficheiro):
         e o número de linhas encontradas
     """
 
-    f = open(ficheiro, 'r')
-
     linhas_com_palavra = []
     numero_palavras = 0
 
-    for linha in f:
+    for linha in texto:
         palavra = remover_acentos(palavra)
         linha_split = remover_acentos(linha).split()
 
@@ -92,7 +90,9 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
     """
     for ficheiro in ficheiros:
 
-        linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, ficheiro)
+        texto = open(ficheiro, 'r')
+
+        linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
 
         #Devido a ter a opção -e específicada, vamos ter apenas um ficheiro, este dividido pelo número de processos em ficheiros mais pequenos. 
         #Assim somamos os valores do número das ocorrências e do número de linhas encontradas para as variáveis partilhadas
@@ -118,46 +118,8 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
         if args.l: 
             print(f"{numero_linhas} linhas com a palavra {args.palavra}")
 
-def dividir_ficheiro(args):
-    """
-    Caso a opção -e esteja específicada, dividimos o ficheiro principal pelo número de processos específicados.
-    Por exemplo, se um ficheiro tiver 29 linhas e se forem específicados 2 processos, o primeiro processo vai ficar com as 15 primeiras linhas 
-    enquanto que o outro processo vai ficar com 14 linhas
-    
-    Args:
-        args: objeto da classe ArgumentParser, com os argumentos dados pelo utilizador
-    Returns:
-        Lista de strings com o nome dos novos ficheiros criados a partir do ficheiro dado pelo utilizador
-    """
-    ficheiro = args.ficheiros[0]
-
-    #Número de linhas do ficheiro principal
-    num_linhas_ficheiro = sum(1 for _ in open(ficheiro))
-
-    #Atribuição do número linhas para cada processo
-    linhas_processo = [num_linhas_ficheiro // args.processos for _ in range(args.processos)]
-    linhas_extra = num_linhas_ficheiro % args.processos
-    for i in range(linhas_extra):
-        linhas_processo[i] += 1 
-
-    #Criação dos novos ficheiros
-    ficheiro_split = ficheiro.split('.')
-    novos_ficheiros = [[f'{ficheiro_split[0]}_{i+1}.{ficheiro_split[1]}'] for i in range(args.processos)]
-
-    f = open(ficheiro, 'r')
-    texto = f.readlines()
-
-    #Escrita das linhas do ficheiro principal nos novos ficheiros
-    count = 0
-    for i, novo_ficheiro in enumerate(novos_ficheiros):
-        with open(novo_ficheiro[0], 'w') as out_f:
-            for _ in range(linhas_processo[i]):
-                out_f.write(texto[count])
-                count += 1
-            out_f.close()
-
-    return novos_ficheiros
                 
+###########################################################
 def get_size_process(tarefas, dict):
     res = []
     for p in tarefas:
@@ -169,8 +131,6 @@ def get_size_process(tarefas, dict):
                 counter += dict.get(f)
             res.append(counter)
     return res.index(min(res))
-
-
 
 def dividir_tarefas(args):
     """
@@ -184,11 +144,9 @@ def dividir_tarefas(args):
         lista com várias listas contendo strings dos nomes dos ficheiros a serem procurados, para cada processo
     """
 
-    #Caso a opção -e seja específicada, então dividimos o ficheiro em ficheiros mais pequenos usando a função dividir_ficheiro.
+    ###############################################
     if args.bytes:
-        tarefas = []
-        tarefas = dividir_ficheiro(args)
-
+        pass
     else:
         num_ficheiros = len(args.ficheiros)
         num_processos = args.processos
@@ -199,7 +157,7 @@ def dividir_tarefas(args):
             args.processos = num_ficheiros
             tarefas = [[ficheiro] for ficheiro in args.ficheiros]
 
-        #Se o número de processso for menor que o número de ficheiros então distribuímos os ficheiros aos processos uniformemente
+        ###########################################################
         elif num_processos < num_ficheiros:
             dict = {}
             for f in args.ficheiros:
@@ -211,8 +169,25 @@ def dividir_tarefas(args):
                 index_min = get_size_process(tarefas, dict2)
                 tarefas[index_min].append(list(dict.keys())[-1])
                 dict.popitem()
-        print(tarefas)
+
     return tarefas
+
+def getBytesFromStringList(list):
+    counter = 0
+    for s in list:
+        counter += len(s.encode('utf8'))
+    return counter
+
+def produtor(args, queue, files):
+    list = []
+    for f in files:
+        texto = open(f, 'r').readlines()
+        for i, s in enumerate(texto):
+            if getBytesFromStringList(list) + len(texto[i+1].encode('utf8')) > args.bytes:
+                queue.put(list)
+                list = []
+            else:
+                list.append(s)
 
 def pgrepwc(args, palavras_encontradas, linhas_encontradas):
     """
@@ -227,17 +202,35 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
                             Este argumento está alocado na memória partilhada
     """
 
-    tarefas = dividir_tarefas(args)
     processos_filho = []
 
-    for i in range(args.processos):
-        processos_filho.append(Process(target=grepwc,
-                                       args = (args, tarefas[i], palavras_encontradas, linhas_encontradas)))
+    if args.bytes:
+        q = Queue()
 
-    for i in range(args.processos):
-        processos_filho[i].start()
-    for i in range(args.processos):
-        processos_filho[i].join()
+        for i in range(args.processos):
+            processos_filho.append(Process(target=consumer))
+
+        for consumer in processos_filho:
+            consumer.start()
+
+        producer = Process(target=producer)
+        producer.start()
+        producer.join()
+
+        for consumer in processos_filho:
+            consumer.join()
+
+    else:
+        for i in range(args.processos):
+            tarefas = dividir_tarefas(args)
+
+            processos_filho.append(Process(target=grepwc,
+                                        args = (args, tarefas[i], palavras_encontradas, linhas_encontradas)))
+
+        for i in range(args.processos):
+            processos_filho[i].start()
+        for i in range(args.processos):
+            processos_filho[i].join()
 
     #Caso a opção -e seja específicada, então removemos os ficheiros criados pela função dividir_ficheiro
     if args.bytes:
