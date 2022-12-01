@@ -191,6 +191,7 @@ def numberBytesStringList(l):
         counter += len(s.encode('utf-8'))
     return counter
 
+# FALTA FAZER COM QUE A FILA NAO TENHA MAIS QUE 1MB
 def produtor(files, queue, maxBytes, STOP_TOKEN):
     i = 0
     list = []
