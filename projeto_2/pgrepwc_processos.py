@@ -5,6 +5,7 @@ from multiprocessing import Process, Array, Queue, Lock, Value
 import argparse
 import unicodedata
 import os
+from signal import signal, SIGINT
 
 def obter_argumentos():
     """
@@ -106,9 +107,9 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
             palavras_encontradas[indice_ficheiro] = numero_palavras
             linhas_encontradas[indice_ficheiro] = numero_linhas
 
-        for linha in linhas_com_palavra:
-            linha = linha.replace('\n', '')
-            print(f"\n{linha}")
+        # for linha in linhas_com_palavra:
+        #     linha = linha.replace('\n', '')
+        #     print(f"\n{linha}")
 
         print(f"\nNo ficheiro {ficheiro} foram encontradas:")
         
@@ -191,8 +192,9 @@ def numberBytesStringList(l):
         counter += len(s.encode('utf-8'))
     return counter
 
-# FALTA FAZER COM QUE A FILA NAO TENHA MAIS QUE 1MB
+# FALTA FAZER COM QUE A QUEUE NAO TENHA MAIS QUE 1MB
 def produtor(files, queue, maxBytes, STOP_TOKEN):
+    global stop
     i = 0
     list = []
     for f in files:
@@ -203,12 +205,13 @@ def produtor(files, queue, maxBytes, STOP_TOKEN):
             if numberBytesStringList(list) > maxBytes:
                 queue.put(list[:-1])
                 list = list[-1:]
+            if stop:
+                break
         if i == numberLinesFiles(files):
             queue.put(list)
     queue.put(STOP_TOKEN)
 
 def consumidor(queue, lock, i, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN):
-    novos_ficheiros = []
     while True:
         lock.acquire()
         item = queue.get()
@@ -221,12 +224,12 @@ def consumidor(queue, lock, i, args, palavras_encontradas, linhas_encontradas, S
             lock.acquire()
             with open(f'file_temp_{i.value}.txt', 'w') as input:
                 input.writelines(item)
-                novos_ficheiros.append(f'file_temp_{i.value}.txt')
+                grepwc(args, [f'file_temp_{i.value}.txt'], palavras_encontradas, linhas_encontradas)
             lock.release()
 
-    lock.acquire()
-    grepwc(args, novos_ficheiros, palavras_encontradas, linhas_encontradas)
-    lock.release()
+def sigint(sig, null):
+    global stop
+    stop = True
 
 def pgrepwc(args, palavras_encontradas, linhas_encontradas):
     """
@@ -261,9 +264,9 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
         for cons in processos_filho:
             cons.start()
 
-        prod.join()
         for cons in processos_filho:
             cons.join()
+        prod.join()
 
 
     else:
@@ -284,7 +287,9 @@ def main():
     print('Programa: pgrepwc_processos.py')
 
     args = obter_argumentos()
-
+    global stop
+    stop = False
+    signal(SIGINT, sigint)
     #Criamos dois arrays que vão estar na memória partilhada para cada ficheiro a ser pesquisado,
     #um para as palavras encontradas e outro para as linahs encontradas 
     palavras_encontradas = Array('i', len(args.ficheiros))
