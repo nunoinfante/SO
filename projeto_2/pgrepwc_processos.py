@@ -1,7 +1,7 @@
 ### Grupo: SO-TI-38
 ### Aluno 1: Nuno Infante (fc55411)
 
-from multiprocessing import Process, Array, Queue, Lock
+from multiprocessing import Process, Array, Queue, Lock, Value
 import argparse
 import unicodedata
 import os
@@ -118,7 +118,10 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
         if args.l: 
             print(f"{numero_linhas} linhas com a palavra {args.palavra}")
 
-                
+    # Caso a opção -e seja específicada, então removemos os ficheiros criados pelo produtor
+    if args.bytes:
+        for file in ficheiros:
+            os.remove(file)         
 ###########################################################
 def get_size_process(tarefas, dict):
     res = []
@@ -172,49 +175,57 @@ def dividir_tarefas(args):
 
     return tarefas
 
-def numberBytes(list):
-    counter = 0
-    for s in list:
-        counter += len(s.encode('utf8'))
-    return counter
+def readFile(file):
+    with open(file, 'r') as input:
+        return input.readlines()
 
-def numberLines(files):
+def numberLinesFiles(files):
     counter = 0
     for f in files:
-        file = open(f, 'r')
-        counter += len(file.readlines())
+        counter += len(readFile(f))
     return counter
 
-def produtor(args, queue, files):
-    # mutex = Lock()
-    list = []
+def numberBytesStringList(l):
+    counter = 0
+    for s in l:
+        counter += len(s.encode('utf-8'))
+    return counter
+
+def produtor(files, queue, maxBytes, STOP_TOKEN):
     i = 0
-    j = 1
+    list = []
     for f in files:
-        texto = open(f, 'r').readlines()
+        texto = readFile(f)
         for s in texto:
             list.append(s)
             i += 1
-            if i == numberLines(files):
-                    f = open(f'file_temp_{j}.txt', 'w')
-                    f.writelines(list)
-                    # mutex.acquire()
-                    queue.put(f)
-                    # mutex.release()
-            elif numberBytes(list) > args.bytes:
-                f = open(f'file_temp_{j}.txt', 'w')
-                j += 1
-                f.writelines(list[:-1])
-                # mutex.acquire()
-                queue.put(f)
-                # mutex.release()
+            if numberBytesStringList(list) > maxBytes:
+                queue.put(list[:-1])
                 list = list[-1:]
+        if i == numberLinesFiles(files):
+            queue.put(list)
+    queue.put(STOP_TOKEN)
 
-def consumidor(args, queue):
+def consumidor(queue, lock, i, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN):
+    novos_ficheiros = []
     while True:
+        lock.acquire()
         item = queue.get()
-        print(item)
-    
+        i.value += 1
+        lock.release()
+        if item == STOP_TOKEN:
+            queue.put(STOP_TOKEN) #Põe se de volta na queue para informar os outros consumidores
+            break
+        else:
+            lock.acquire()
+            with open(f'file_temp_{i.value}.txt', 'w') as input:
+                input.writelines(item)
+                novos_ficheiros.append(f'file_temp_{i.value}.txt')
+            lock.release()
+
+    lock.acquire()
+    grepwc(args, novos_ficheiros, palavras_encontradas, linhas_encontradas)
+    lock.release()
 
 def pgrepwc(args, palavras_encontradas, linhas_encontradas):
     """
@@ -234,23 +245,29 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
     if args.bytes:
         queue = Queue()
 
+        STOP_TOKEN = 'STOP'
+
+        processos_filho = []
+        lock = Lock()
+        myVar = Value("i", 0)
+
         for i in range(args.processos):
-            processos_filho.append(Process(target=consumidor, args = (args, queue)))
-
-        producer = Process(target=produtor, args = (args, queue, args.ficheiros))
-
-        producer.start()
-        for consumer in processos_filho:
-            consumer.start()
+            processos_filho.append(Process(target=consumidor, args = (queue, lock, myVar, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN)))
         
-        producer.join()
-        for consumer in processos_filho:
-            consumer.join()
+        prod = Process(target=produtor, args = (args.ficheiros, queue, args.bytes, STOP_TOKEN))
+
+        prod.start()
+        for cons in processos_filho:
+            cons.start()
+
+        prod.join()
+        for cons in processos_filho:
+            cons.join()
+
 
     else:
+        tarefas = dividir_tarefas(args)
         for i in range(args.processos):
-            tarefas = dividir_tarefas(args)
-
             processos_filho.append(Process(target=grepwc,
                                         args = (args, tarefas[i], palavras_encontradas, linhas_encontradas)))
 
@@ -259,10 +276,7 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
         for i in range(args.processos):
             processos_filho[i].join()
 
-    #Caso a opção -e seja específicada, então removemos os ficheiros criados pela função dividir_ficheiro
-    # if args.bytes:
-    #     for file in tarefas:
-    #         os.remove(file[0])
+    
 
 
 def main():
