@@ -67,18 +67,12 @@ def encontrar_palavras(palavra, texto):
     linhas_com_palavra = []
     numero_palavras = 0
 
-    for linha in texto:
-        palavra = remover_acentos(palavra)
-        linha_split = remover_acentos(linha).split()
+    for s in texto:
+        s = remover_acentos(s)
+        if remover_acentos(palavra) in s:
+            linhas_com_palavra.append(s)
+            numero_palavras += s.count(remover_acentos(palavra))
 
-        #Se para cada palavra em linha_split for igual à palavra que estamos a procurar então somamos 1 ao número ocorrências dessa palavra
-        for p in linha_split:
-            if p == palavra:
-                numero_palavras += 1
-
-        #Se a palavra estiver na lista linha_split então damos append dessa linha
-        if palavra in linha_split:
-            linhas_com_palavra.append(linha)
 
     return (linhas_com_palavra, numero_palavras, len(linhas_com_palavra))
 
@@ -102,7 +96,7 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
         #Devido a ter a opção -e específicada, vamos ter apenas um ficheiro, este dividido pelo número de processos em ficheiros mais pequenos. 
         #Assim somamos os valores do número das ocorrências e do número de linhas encontradas para as variáveis partilhadas
         if args.bytes:
-            palavras_encontradas[0 ] += numero_palavras
+            palavras_encontradas[0] += numero_palavras
             linhas_encontradas[0] += numero_linhas
 
         #Devido a termos mais que um ficheiro, guardamos os valores do número das ocorrências e do número de linhas encontradas no índice correspondente ao ficheiro na lista args.ficheiros
@@ -111,9 +105,9 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
             palavras_encontradas[indice_ficheiro] = numero_palavras
             linhas_encontradas[indice_ficheiro] = numero_linhas
 
-        # for linha in linhas_com_palavra:
-        #     linha = linha.replace('\n', '')
-        #     print(f"\n{linha}")
+        for linha in linhas_com_palavra:
+            linha = linha.replace('\n', '')
+            print(f"\n{linha}")
 
         print(f"\nNo ficheiro {ficheiro} foram encontradas:")
         
@@ -123,10 +117,8 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
         if args.l: 
             print(f"{numero_linhas} linhas com a palavra {args.palavra}")
 
-    # Caso a opção -e seja específicada, então removemos os ficheiros criados pelo produtor
-    if args.bytes:
-        for file in ficheiros:
-            os.remove(file)         
+
+             
 ###########################################################
 def get_size_process(tarefas, dict):
     res = []
