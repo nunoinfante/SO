@@ -34,10 +34,6 @@ def obter_argumentos():
     #Guardar os valores dos argumentos dados no objeto args
     args = parser.parse_args()
 
-    if len(args.ficheiros) > 1:
-        args.bytes = None
-        print(args.bytes)
-
     #Caso o número de processos específicado seja menor ou igual a 0, levanta-se uma exceção
     if args.processos <= 0:
         raise Exception('Invalid number of processes')
@@ -76,7 +72,7 @@ def encontrar_palavras(palavra, texto):
 
     return (linhas_com_palavra, numero_palavras, len(linhas_com_palavra))
 
-def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
+def grepwc(args, texto, ficheiro, palavras_encontradas, linhas_encontradas):
     """
     Imprime as linhas encontradas de cada ficheiro, bem como o número de ocorrências da palavra e o número de linhas encontradas
     Args:
@@ -87,35 +83,30 @@ def grepwc(args, ficheiros, palavras_encontradas, linhas_encontradas):
         linhas_encontradas: lista com o número de linhas encontradas para cada ficheiro
                             Este argumento está alocado na memória partilhada
     """
-    for ficheiro in ficheiros:
+    linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
+    #Devido a ter a opção -e específicada, vamos ter apenas um ficheiro, este dividido pelo número de processos em ficheiros mais pequenos. 
+    #Assim somamos os valores do número das ocorrências e do número de linhas encontradas para as variáveis partilhadas
+    # if args.bytes:
+    #     palavras_encontradas[0] += numero_palavras
+    #     linhas_encontradas[0] += numero_linhas
 
-        texto = open(ficheiro, 'r')
+    # #Devido a termos mais que um ficheiro, guardamos os valores do número das ocorrências e do número de linhas encontradas no índice correspondente ao ficheiro na lista args.ficheiros
+    # else:
+    indice_ficheiro = args.ficheiros.index(ficheiro)
+    palavras_encontradas[indice_ficheiro] = numero_palavras
+    linhas_encontradas[indice_ficheiro] = numero_linhas
 
-        linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
+    # for linha in linhas_com_palavra:
+    #     linha = linha.replace('\n', '')
+    #     print(f"\n{linha}")
 
-        #Devido a ter a opção -e específicada, vamos ter apenas um ficheiro, este dividido pelo número de processos em ficheiros mais pequenos. 
-        #Assim somamos os valores do número das ocorrências e do número de linhas encontradas para as variáveis partilhadas
-        if args.bytes:
-            palavras_encontradas[0] += numero_palavras
-            linhas_encontradas[0] += numero_linhas
+    print(f"\nNo ficheiro {ficheiro} foram encontradas:")
+    
+    if args.c:
+        print(f"{numero_palavras} ocorrencias da palavra {args.palavra}")
 
-        #Devido a termos mais que um ficheiro, guardamos os valores do número das ocorrências e do número de linhas encontradas no índice correspondente ao ficheiro na lista args.ficheiros
-        else:
-            indice_ficheiro = args.ficheiros.index(ficheiro)
-            palavras_encontradas[indice_ficheiro] = numero_palavras
-            linhas_encontradas[indice_ficheiro] = numero_linhas
-
-        for linha in linhas_com_palavra:
-            linha = linha.replace('\n', '')
-            print(f"\n{linha}")
-
-        print(f"\nNo ficheiro {ficheiro} foram encontradas:")
-        
-        if args.c:
-            print(f"{numero_palavras} ocorrencias da palavra {args.palavra}")
-
-        if args.l: 
-            print(f"{numero_linhas} linhas com a palavra {args.palavra}")
+    if args.l: 
+        print(f"{numero_linhas} linhas com a palavra {args.palavra}")
 
 
              
@@ -150,7 +141,7 @@ def dividir_tarefas(args):
     else:
         num_ficheiros = len(args.ficheiros)
         num_processos = args.processos
-        tarefas =  [ []*num_processos for i in range(num_processos)]
+        tarefas =  [[]*num_processos for i in range(num_processos)]
 
         #Se o número de processos for maior ou igual que o número de ficheiros então o número de processos é o número de ficheiros a pesquisar
         if num_processos >= num_ficheiros:
@@ -199,18 +190,18 @@ def produtor(files, queue, maxBytes, STOP_TOKEN):
             list.append(s)
             i += 1
             if numberBytesStringList(list) > maxBytes:
-                queue.put(list[:-1])
+                queue.put((f, list[:-1]))
                 list = list[-1:]
             if stop:
                 break
         if i == numberLinesFiles(files):
-            queue.put(list)
+            queue.put((f, list))
     queue.put(STOP_TOKEN)
 
 def consumidor(queue, lock, i, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN):
     while True:
         lock.acquire()
-        item = queue.get()
+        f, item = queue.get()
         i.value += 1
         lock.release()
         if item == STOP_TOKEN:
@@ -218,10 +209,8 @@ def consumidor(queue, lock, i, args, palavras_encontradas, linhas_encontradas, S
             break
         else:
             lock.acquire()
-            with open(f'file_temp_{i.value}.txt', 'w') as input:
-                input.writelines(item)
-                #FAZER ISTO DE 3 EM 3 SEGUNDOS
-                grepwc(args, [f'file_temp_{i.value}.txt'], palavras_encontradas, linhas_encontradas)
+            #FAZER ISTO DE 3 EM 3 SEGUNDOS
+            grepwc(args, item, f, palavras_encontradas, linhas_encontradas)
             lock.release()
 
 def interval():
@@ -280,13 +269,12 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
         for i in range(args.processos):
             processos_filho[i].join()
 
-    
-
-
 def main():
     print('Programa: pgrepwc_processos.py')
 
     args = obter_argumentos()
+    print(args)
+
     global stop
     stop = False
     signal(SIGINT, sigint)
@@ -297,7 +285,9 @@ def main():
 
     #Se o número de processos for igual a 1 então o processo pai faz a pesquisa
     if args.processos == 1:
-        grepwc(args, args.ficheiros, palavras_encontradas, linhas_encontradas)
+        for f in args.ficheiros:
+            texto = open(f, 'r').readlines()
+            grepwc(args, texto, f, palavras_encontradas, linhas_encontradas)
     else:
         pgrepwc(args, palavras_encontradas, linhas_encontradas)
 
