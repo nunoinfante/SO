@@ -34,6 +34,10 @@ def obter_argumentos():
     #Guardar os valores dos argumentos dados no objeto args
     args = parser.parse_args()
 
+    if len(args.ficheiros) > 1:
+        args.bytes = None
+        print(args.bytes)
+
     #Caso o número de processos específicado seja menor ou igual a 0, levanta-se uma exceção
     if args.processos <= 0:
         raise Exception('Invalid number of processes')
@@ -224,8 +228,12 @@ def consumidor(queue, lock, i, args, palavras_encontradas, linhas_encontradas, S
             lock.acquire()
             with open(f'file_temp_{i.value}.txt', 'w') as input:
                 input.writelines(item)
+                #FAZER ISTO DE 3 EM 3 SEGUNDOS
                 grepwc(args, [f'file_temp_{i.value}.txt'], palavras_encontradas, linhas_encontradas)
             lock.release()
+
+def interval():
+    pass
 
 def sigint(sig, null):
     global stop
