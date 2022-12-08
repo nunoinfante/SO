@@ -9,6 +9,7 @@ from signal import signal, SIGINT
 from time import time
 
 stop = False
+STOP_TOKEN = 'STOP'
 
 def obter_argumentos():
     """
@@ -72,7 +73,7 @@ def encontrar_palavras(palavra, texto):
             linhas_com_palavra.append(s)
             numero_palavras += s.count(remover_acentos(palavra))
 
-    return (linhas_com_palavra, numero_palavras, len(linhas_com_palavra))
+    return (numero_palavras, len(linhas_com_palavra))
 
 def grepwc(args, palavras_encontradas, linhas_encontradas, ficheiros=[], texto=''):
     """
@@ -86,7 +87,7 @@ def grepwc(args, palavras_encontradas, linhas_encontradas, ficheiros=[], texto='
                             Este argumento está alocado na memória partilhada
     """
     if args.bytes:
-        linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
+        numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
 
         palavras_encontradas.value += numero_palavras
         linhas_encontradas.value += numero_linhas
@@ -96,17 +97,12 @@ def grepwc(args, palavras_encontradas, linhas_encontradas, ficheiros=[], texto='
             print(f)
             texto = open(f, 'r').readlines()
 
-            linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
+            numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
             palavras_encontradas.value += numero_palavras
             linhas_encontradas.value += numero_linhas
 
             if stop:
                 break
-
-    # for linha in linhas_com_palavra:
-    #     linha = linha.replace('\n', '')
-    #     print(f"\n{linha}")
-
              
 ###########################################################
 def get_size_process(tarefas, dict):
@@ -174,9 +170,7 @@ def numberBytesStringList(l):
         counter += len(s.encode('utf-8'))
     return counter
 
-# FALTA FAZER COM QUE A QUEUE NAO TENHA MAIS QUE 1MB
-def produtor(files, queue, maxBytes, STOP_TOKEN, queueSize):
-
+def produtor(files, queue, maxBytes, queueSize):
     break_out_flag = False
     i = 0
     list = []
@@ -187,11 +181,9 @@ def produtor(files, queue, maxBytes, STOP_TOKEN, queueSize):
             i += 1
             if numberBytesStringList(list) > maxBytes:
                 while queueSize.value > 1000000:
-                    # print('BBBB')
                     pass
                 queueSize.value += numberBytesStringList(list[:-1])
-                print(queueSize.value)
-                queue.put((list[:-1]))
+                queue.put(list[:-1])
                 list = list[-1:]
             if stop:
                 break_out_flag = True
@@ -199,18 +191,16 @@ def produtor(files, queue, maxBytes, STOP_TOKEN, queueSize):
         if break_out_flag:
             break
         if i == numberLinesFiles(files):
-                queue.put((list))
+                queue.put(list)
                 queueSize.value += numberBytesStringList(list)
-    print('AWIDAWKHDNKJAWHDAW')
     queue.put(STOP_TOKEN)
     
 
-def consumidor(queue, lock, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN, queueSize):
+def consumidor(queue, lock, args, palavras_encontradas, linhas_encontradas, queueSize):
     while True:
         item = queue.get()
         lock.acquire()
         queueSize.value -= numberBytesStringList(item)
-        print(f'{queueSize.value}\n')
         lock.release()
         if item == STOP_TOKEN:
             queue.put(STOP_TOKEN) #Põe se de volta na queue para informar os outros consumidores
@@ -222,7 +212,8 @@ def consumidor(queue, lock, args, palavras_encontradas, linhas_encontradas, STOP
     
 
 def interval():
-    pass
+    while not stop:
+        print('A')
 
 def sigint(sig, null):
     global stop
@@ -248,21 +239,18 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
 
         queueSize = Value('i', 0)
 
-        STOP_TOKEN = 'STOP'
-
         processos_filho = []
         lock = Lock()
 
         for i in range(args.processos):
-            processos_filho.append(Process(target=consumidor, args = (queue, lock, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN, queueSize)))
+            processos_filho.append(Process(target=consumidor, args = (queue, lock, args, palavras_encontradas, linhas_encontradas, queueSize)))
         
-        prod = Process(target=produtor, args = (args.ficheiros, queue, args.bytes, STOP_TOKEN, queueSize))
+        prod = Process(target=produtor, args = (args.ficheiros, queue, args.bytes, queueSize))
 
         prod.start()
-        
         for cons in processos_filho:
             cons.start()
-
+        
         prod.join()
         for cons in processos_filho:
             cons.join()
@@ -291,12 +279,14 @@ def main():
     palavras_encontradas = Value('i', 0)
     linhas_encontradas = Value('i', 0)
 
+    interval_process = Process(target=interval)
+    interval_process.start()
+
     #Se o número de processos for igual a 1 então o processo pai faz a pesquisa
     if args.processos == 1:
         grepwc(args, palavras_encontradas, linhas_encontradas, ficheiros = args.ficheiros)
     else:   
         pgrepwc(args, palavras_encontradas, linhas_encontradas)
-
 
     print("\nNo total, em todos os ficheiros foram encontradas:")
 
@@ -306,5 +296,8 @@ def main():
         print(f"{linhas_encontradas.value} linhas com a palavra {args.palavra}")  
 
     print(f'Tempo de execucao: {time()-inicio}')
+
+
+
 if __name__ == "__main__":
     main()
