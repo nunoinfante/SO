@@ -6,6 +6,9 @@ import argparse
 import unicodedata
 import os
 from signal import signal, SIGINT
+from time import time
+
+stop = False
 
 def obter_argumentos():
     """
@@ -69,10 +72,9 @@ def encontrar_palavras(palavra, texto):
             linhas_com_palavra.append(s)
             numero_palavras += s.count(remover_acentos(palavra))
 
-
     return (linhas_com_palavra, numero_palavras, len(linhas_com_palavra))
 
-def grepwc(args, texto, ficheiro, palavras_encontradas, linhas_encontradas):
+def grepwc(args, palavras_encontradas, linhas_encontradas, ficheiros=[], texto=''):
     """
     Imprime as linhas encontradas de cada ficheiro, bem como o número de ocorrências da palavra e o número de linhas encontradas
     Args:
@@ -83,31 +85,27 @@ def grepwc(args, texto, ficheiro, palavras_encontradas, linhas_encontradas):
         linhas_encontradas: lista com o número de linhas encontradas para cada ficheiro
                             Este argumento está alocado na memória partilhada
     """
-    linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
-    #Devido a ter a opção -e específicada, vamos ter apenas um ficheiro, este dividido pelo número de processos em ficheiros mais pequenos. 
-    #Assim somamos os valores do número das ocorrências e do número de linhas encontradas para as variáveis partilhadas
-    # if args.bytes:
-    #     palavras_encontradas[0] += numero_palavras
-    #     linhas_encontradas[0] += numero_linhas
+    if args.bytes:
+        linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
 
-    # #Devido a termos mais que um ficheiro, guardamos os valores do número das ocorrências e do número de linhas encontradas no índice correspondente ao ficheiro na lista args.ficheiros
-    # else:
-    indice_ficheiro = args.ficheiros.index(ficheiro)
-    palavras_encontradas[indice_ficheiro] = numero_palavras
-    linhas_encontradas[indice_ficheiro] = numero_linhas
+        palavras_encontradas.value += numero_palavras
+        linhas_encontradas.value += numero_linhas
+
+    else:
+        for f in ficheiros:
+            print(f)
+            texto = open(f, 'r').readlines()
+
+            linhas_com_palavra, numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
+            palavras_encontradas.value += numero_palavras
+            linhas_encontradas.value += numero_linhas
+
+            if stop:
+                break
 
     # for linha in linhas_com_palavra:
     #     linha = linha.replace('\n', '')
     #     print(f"\n{linha}")
-
-    print(f"\nNo ficheiro {ficheiro} foram encontradas:")
-    
-    if args.c:
-        print(f"{numero_palavras} ocorrencias da palavra {args.palavra}")
-
-    if args.l: 
-        print(f"{numero_linhas} linhas com a palavra {args.palavra}")
-
 
              
 ###########################################################
@@ -136,30 +134,27 @@ def dividir_tarefas(args):
     """
 
     ###############################################
-    if args.bytes:
-        pass
-    else:
-        num_ficheiros = len(args.ficheiros)
-        num_processos = args.processos
-        tarefas =  [[]*num_processos for i in range(num_processos)]
+    num_ficheiros = len(args.ficheiros)
+    num_processos = args.processos
+    tarefas =  [[]*num_processos for i in range(num_processos)]
 
-        #Se o número de processos for maior ou igual que o número de ficheiros então o número de processos é o número de ficheiros a pesquisar
-        if num_processos >= num_ficheiros:
-            args.processos = num_ficheiros
-            tarefas = [[ficheiro] for ficheiro in args.ficheiros]
+    #Se o número de processos for maior ou igual que o número de ficheiros então o número de processos é o número de ficheiros a pesquisar
+    if num_processos >= num_ficheiros:
+        args.processos = num_ficheiros
+        tarefas = [[ficheiro] for ficheiro in args.ficheiros]
 
-        ###########################################################
-        elif num_processos < num_ficheiros:
-            dict = {}
-            for f in args.ficheiros:
-                dict[f] = os.stat(f).st_size / 1000
-            dict = {k: v for k, v in sorted(dict.items(), key=lambda item: item[1])}
-            dict2 = dict.copy()
-            
-            while len(dict) != 0:
-                index_min = get_size_process(tarefas, dict2)
-                tarefas[index_min].append(list(dict.keys())[-1])
-                dict.popitem()
+    ###########################################################
+    elif num_processos < num_ficheiros:
+        dict = {}
+        for f in args.ficheiros:
+            dict[f] = os.stat(f).st_size
+        dict = {k: v for k, v in sorted(dict.items(), key=lambda item: item[1])}
+        dict2 = dict.copy()
+        
+        while len(dict) != 0:
+            index_min = get_size_process(tarefas, dict2)
+            tarefas[index_min].append(list(dict.keys())[-1])
+            dict.popitem()
 
     return tarefas
 
@@ -180,8 +175,9 @@ def numberBytesStringList(l):
     return counter
 
 # FALTA FAZER COM QUE A QUEUE NAO TENHA MAIS QUE 1MB
-def produtor(files, queue, maxBytes, STOP_TOKEN):
-    global stop
+def produtor(files, queue, maxBytes, STOP_TOKEN, queueSize):
+
+    break_out_flag = False
     i = 0
     list = []
     for f in files:
@@ -190,28 +186,40 @@ def produtor(files, queue, maxBytes, STOP_TOKEN):
             list.append(s)
             i += 1
             if numberBytesStringList(list) > maxBytes:
-                queue.put((f, list[:-1]))
+                while queueSize.value > 1000000:
+                    # print('BBBB')
+                    pass
+                queueSize.value += numberBytesStringList(list[:-1])
+                print(queueSize.value)
+                queue.put((list[:-1]))
                 list = list[-1:]
             if stop:
+                break_out_flag = True
                 break
+        if break_out_flag:
+            break
         if i == numberLinesFiles(files):
-            queue.put((f, list))
+                queue.put((list))
+                queueSize.value += numberBytesStringList(list)
+    print('AWIDAWKHDNKJAWHDAW')
     queue.put(STOP_TOKEN)
+    
 
-def consumidor(queue, lock, i, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN):
+def consumidor(queue, lock, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN, queueSize):
     while True:
+        item = queue.get()
         lock.acquire()
-        f, item = queue.get()
-        i.value += 1
+        queueSize.value -= numberBytesStringList(item)
+        print(f'{queueSize.value}\n')
         lock.release()
         if item == STOP_TOKEN:
             queue.put(STOP_TOKEN) #Põe se de volta na queue para informar os outros consumidores
             break
         else:
             lock.acquire()
-            #FAZER ISTO DE 3 EM 3 SEGUNDOS
-            grepwc(args, item, f, palavras_encontradas, linhas_encontradas)
+            grepwc(args, palavras_encontradas, linhas_encontradas, texto=item)
             lock.release()
+    
 
 def interval():
     pass
@@ -238,31 +246,32 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
     if args.bytes:
         queue = Queue()
 
+        queueSize = Value('i', 0)
+
         STOP_TOKEN = 'STOP'
 
         processos_filho = []
         lock = Lock()
-        myVar = Value("i", 0)
 
         for i in range(args.processos):
-            processos_filho.append(Process(target=consumidor, args = (queue, lock, myVar, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN)))
+            processos_filho.append(Process(target=consumidor, args = (queue, lock, args, palavras_encontradas, linhas_encontradas, STOP_TOKEN, queueSize)))
         
-        prod = Process(target=produtor, args = (args.ficheiros, queue, args.bytes, STOP_TOKEN))
+        prod = Process(target=produtor, args = (args.ficheiros, queue, args.bytes, STOP_TOKEN, queueSize))
 
         prod.start()
+        
         for cons in processos_filho:
             cons.start()
 
+        prod.join()
         for cons in processos_filho:
             cons.join()
-        prod.join()
-
 
     else:
         tarefas = dividir_tarefas(args)
         for i in range(args.processos):
             processos_filho.append(Process(target=grepwc,
-                                        args = (args, tarefas[i], palavras_encontradas, linhas_encontradas)))
+                                        args = (args, palavras_encontradas, linhas_encontradas, tarefas[i])))
 
         for i in range(args.processos):
             processos_filho[i].start()
@@ -270,44 +279,32 @@ def pgrepwc(args, palavras_encontradas, linhas_encontradas):
             processos_filho[i].join()
 
 def main():
+    inicio = time()
     print('Programa: pgrepwc_processos.py')
 
     args = obter_argumentos()
-    print(args)
 
-    global stop
-    stop = False
     signal(SIGINT, sigint)
+
     #Criamos dois arrays que vão estar na memória partilhada para cada ficheiro a ser pesquisado,
     #um para as palavras encontradas e outro para as linahs encontradas 
-    palavras_encontradas = Array('i', len(args.ficheiros))
-    linhas_encontradas = Array('i', len(args.ficheiros))
+    palavras_encontradas = Value('i', 0)
+    linhas_encontradas = Value('i', 0)
 
     #Se o número de processos for igual a 1 então o processo pai faz a pesquisa
     if args.processos == 1:
-        for f in args.ficheiros:
-            texto = open(f, 'r').readlines()
-            grepwc(args, texto, f, palavras_encontradas, linhas_encontradas)
-    else:
+        grepwc(args, palavras_encontradas, linhas_encontradas, ficheiros = args.ficheiros)
+    else:   
         pgrepwc(args, palavras_encontradas, linhas_encontradas)
 
-    #Se o número de ficheiros for maior que 1 então calculamos as palavras e as linhas totais encontradas.
-    #Também se aplica caso a opção -e seja específicada
-    if len(args.ficheiros) > 1 or args.bytes and args.processos > 1:
 
-        palavras_total = 0
-        linhas_total = 0
+    print("\nNo total, em todos os ficheiros foram encontradas:")
 
-        for i in range(len(args.ficheiros)):
-            palavras_total += palavras_encontradas[i]
-            linhas_total += linhas_encontradas[i]
-    
-        print("\nNo total, em todos os ficheiros foram encontradas:")
+    if args.c:
+        print(f"{palavras_encontradas.value} ocorrencias da palavra {args.palavra}")
+    if args.l: 
+        print(f"{linhas_encontradas.value} linhas com a palavra {args.palavra}")  
 
-        if args.c:
-            print(f"{palavras_total} ocorrencias da palavra {args.palavra}")
-        if args.l: 
-            print(f"{linhas_total} linhas com a palavra {args.palavra}")  
-
+    print(f'Tempo de execucao: {time()-inicio}')
 if __name__ == "__main__":
     main()
