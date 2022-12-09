@@ -241,12 +241,13 @@ def produtor(files, queue, maxBytes, queueSize):
         texto = read_file(f)
         for s in texto:
             list.append(s)
+            #Se a lista de strings tiver mais que o número máximo de bytes
             if numero_bytes_string(list) > maxBytes:
                 while queueSize.value > 1000000:
                     pass
                 queueSize.value += numero_bytes_string(list[:-1])
-                queue.put(list[:-1])
-                list = list[-1:]
+                queue.put(list[:-1]) #Inserir na queue a lista exceto a última linha (que originou o bloco de trabalho a ter mais que o número máximo de bytes)
+                list = list[-1:] #
 
         queue.put(list)
         queueSize.value += numero_bytes_string(list)
