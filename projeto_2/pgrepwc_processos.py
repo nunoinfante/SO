@@ -14,12 +14,9 @@ inicio = time()
 end = Value('i', 0)
 STOP_TOKEN = 'STOP'
 
-#Criamos dois arrays que vão estar na memória partilhada para cada ficheiro a ser pesquisado,
-    #um para as palavras encontradas e outro para as linahs encontradas 
-palavras_encontradas = Value('i', 0)
-linhas_encontradas = Value('i', 0)
-
-files_done = Value('i', 0)
+palavras_encontradas = Value('i', 0) #Variável em memória partilhada com o número de ocorrências isoladas
+linhas_encontradas = Value('i', 0) #Variável em memória partilhada com o número de linhas em que houve ocorrências
+files_done = Value('i', 0) #Variável em memória partilhada com o número de ficheiros completamente processados
 
 def seconds_to_micro(sec):
     """
@@ -238,24 +235,21 @@ def numero_bytes_string(lista):
 
 
 def produtor(files, queue, maxBytes, queueSize):
-    i = 0
     list = []
 
     for f in files:
-        print(f)
         texto = read_file(f)
         for s in texto:
             list.append(s)
-            i += 1
             if numero_bytes_string(list) > maxBytes:
                 while queueSize.value > 1000000:
                     pass
                 queueSize.value += numero_bytes_string(list[:-1])
                 queue.put(list[:-1])
                 list = list[-1:]
-        if i == calcula_numero_linhas(files):
-                queue.put(list)
-                queueSize.value += numero_bytes_string(list)
+
+        queue.put(list)
+        queueSize.value += numero_bytes_string(list)
 
         files_done.value += 1
         if end.value == 1:
@@ -307,9 +301,6 @@ def pgrepwc(args):
     Executa a função grepwc de forma paralela criando o número de processos filho indicado nos argumentos dados pelo utilizador
     Args:
         args: objeto da classe ArgumentParser, com os argumentos dados pelo utilizador
-        palavras_encontradas: Value com o número de ocorrências isoladas, que se encontra em memória partilhada
-        linhas_encontradas: Value com o número de linhas em que houve ocorrências, que se encontra em memória partilhada
-        files_done: Value com o número de ficheiros já processados completamente
     """
 
     processos_filho = []
