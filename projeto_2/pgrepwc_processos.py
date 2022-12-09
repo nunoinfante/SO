@@ -259,7 +259,7 @@ def produtor(files, queue, maxBytes, queueSize):
     queue.put(STOP_TOKEN)
     
 
-def consumidor(queue, lock, args, queueSize):
+def consumidor(args, queue, lock, queueSize):
     while True:
         item = queue.get()
         lock.acquire()
@@ -310,30 +310,29 @@ def pgrepwc(args):
         queue = Queue()
         queueSize = Value('i', 0) #Valor para verificar que o tamanho da queue não contenha mais que 1MB de dados
 
-        processos_filho = []
         lock = Lock()
 
         for i in range(args.processos):
-            processos_filho.append(Process(target=consumidor, args = (queue, lock, args, queueSize)))
+            processos_filho.append(Process(target=consumidor, args = (args, queue, lock, queueSize)))
         
-        prod = Process(target=produtor, args = (args.ficheiros, queue, args.bytes, queueSize))
-
-        prod.start()
         for cons in processos_filho:
             cons.start()
         
-        prod.join()
-        for cons in processos_filho:
-            cons.join()
+        produtor(args.ficheiros, queue, args.bytes, queueSize)
+
+        # for cons in processos_filho:
+        #     cons.join()
 
     else:
         tarefas = dividir_tarefas(args)
+
         for i in range(args.processos):
             processos_filho.append(Process(target=grepwc,
                                         args = (args, tarefas[i])))
 
         for i in range(args.processos):
             processos_filho[i].start()
+
         for i in range(args.processos):
             processos_filho[i].join()
 
