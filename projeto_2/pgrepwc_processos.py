@@ -10,9 +10,13 @@ from signal import signal, SIGINT, setitimer, SIGALRM, ITIMER_REAL
 from time import time
 from functools import partial
 
+from colorama import Fore, Style, init
+init() # Inicialização colorama
+
 inicio = time()
 end = Value('i', 0)
 STOP_TOKEN = 'STOP'
+lock = Lock()
 
 palavras_encontradas = Value('i', 0) #Variável em memória partilhada com o número de ocorrências isoladas
 linhas_encontradas = Value('i', 0) #Variável em memória partilhada com o número de linhas em que houve ocorrências
@@ -59,7 +63,7 @@ def obter_argumentos():
     if args.processos <= 0:
         raise Exception('Invalid number of processes')
 
-    #Se não forem dados ficheiros, lê-mos ficheiros pelo stdin
+    #Se não forem dados ficheiros, lê-se ficheiros pelo stdin
     while len(args.ficheiros) == 0:
         ficheiros_input = input("Digite os ficheiros, separados por um espaço onde pretende efetuar a procura:")
         if ficheiros_input != "":
@@ -77,7 +81,7 @@ def remover_acentos(texto):
     """
     return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode("utf-8")
 
-def encontrar_palavras(palavra, texto):
+def pesquisa_palavras(palavra, texto):
     """
     Procura num ficheiro a palavra
     Args:
@@ -94,15 +98,19 @@ def encontrar_palavras(palavra, texto):
     regex = compile(f'\\b{remover_acentos(palavra)}\\b')
 
     for linha in texto:
+        #Se o SIGINT (CTRL+C) tiver sido pressionado anteriormente, é feita a pesquisa até ao ficheiro a que está a ser processado
+        if end.value == 1:
+            break
+
         linha = remover_acentos(linha)
         #Pesquisa em linha usando a expressão regular
-        palavras += regex.findall(linha)
+        palavras_encontradas.value += len(regex.findall(linha))
         #Se a palavra estiver em linha damos append
         if palavra in linha:
-            linhas.append(linha)
-
-    return (len(palavras), len(linhas))
-
+            linhas_encontradas.value += 1
+        
+        
+        
 def grepwc(args, ficheiros=[], texto=''):
     """
     Faz a pesquisa, caso -e seja utilizado, com um texto recebido pela queue. Caso contrário itera sobre os ficheiros dados e faz a pesquisa
@@ -114,23 +122,26 @@ def grepwc(args, ficheiros=[], texto=''):
 
     #Se -e for utilizado
     if args.bytes:
-        numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
 
-        palavras_encontradas.value += numero_palavras
-        linhas_encontradas.value += numero_linhas
+        lock.acquire()
+        pesquisa_palavras(args.palavra, texto)
+        lock.release()
 
     else:
         for f in ficheiros:
+
+            print(f'{Fore.LIGHTBLACK_EX} {f} em processamento {Fore.RESET}\n')
+
             texto = read_file(f)
 
-            numero_palavras, numero_linhas = encontrar_palavras(args.palavra, texto)
-            palavras_encontradas.value += numero_palavras
-            linhas_encontradas.value += numero_linhas
+            lock.acquire()
+            pesquisa_palavras(args.palavra, texto)
+            lock.release()
 
             #Após o ficheiro ser processado completamente, somamos à variável em memória partilhada para ser usada na impressão de resultados
             files_done.value += 1
 
-            #Quando o SIGINT (CTRL-C) é pressionado
+            #Se o SIGINT (CTRL+C) tiver sido pressionado anteriormente, é feita a pesquisa até ao ficheiro a que está a ser processado
             if end.value == 1:
                 break
              
@@ -198,7 +209,7 @@ def read_file(file):
     Args:
         file: ficheiro a ser lido
     Returns:
-        lista com strings de cada linha lida
+        lista com strings com cada linha do ficheiro
     """
     with open(file, 'r') as input:
         return input.readlines()
@@ -219,7 +230,7 @@ def calcula_numero_linhas(files):
     return counter
 
 
-def numero_bytes_string(lista):
+def size_string_bytes(lista):
     """
     Cálcula o número de bytes totais de uma lista de strings
 
@@ -234,56 +245,89 @@ def numero_bytes_string(lista):
     return counter
 
 
-def produtor(files, queue, maxBytes, queueSize):
+def produtor(args, queue, queue_size):
+    """
+    Produz blocos de trabalho para os consumidores os processarem
+
+    Args:
+        args: objeto da classe ArgumentParser, com os argumentos dados pelo utilizador
+        queue: fila onde vão ser empurrados os blocos de trabalhos
+        queue_size: tamanho da queue em bytes
+    """
     list = []
 
-    for f in files:
+    for f in args.ficheiros:
+
+        print(f'{Fore.LIGHTBLACK_EX} {f} em processamento {Fore.RESET}\n')
+
         texto = read_file(f)
+
         for s in texto:
             list.append(s)
             #Se a lista de strings tiver mais que o número máximo de bytes
-            if numero_bytes_string(list) > maxBytes:
-                while queueSize.value > 1000000:
+            if size_string_bytes(list) > args.bytes:
+                #Enquanto a queue tiver mais que 1MB em tamanho
+                while queue_size.value > 1000000:
                     pass
-                queueSize.value += numero_bytes_string(list[:-1])
+                queue_size.value += size_string_bytes(list[:-1])
                 queue.put(list[:-1]) #Inserir na queue a lista exceto a última linha (que originou o bloco de trabalho a ter mais que o número máximo de bytes)
-                list = list[-1:] #
+                list = list[-1:] #Inicializa a lista apenas com a linha
 
-        queue.put(list)
-        queueSize.value += numero_bytes_string(list)
+            if end.value == 1:
+                queue.put(list)
+                break
 
-        files_done.value += 1
         if end.value == 1:
-            queue.put(list)
             break
 
+        queue.put(list)
+        queue_size.value += size_string_bytes(list)
+
+        files_done.value += 1
+    
+    #Quando acaba ou SIGINT é ativado, empurra um aviso para os consumidores
     queue.put(STOP_TOKEN)
     
 
-def consumidor(args, queue, lock, queueSize):
+def consumidor(args, queue, queue_size):
+    """
+    Faz a pesquisa dos blocos de trabalho produzidos pelo produtor
+
+    Args:
+        args: objeto da classe ArgumentParser, com os argumentos dados pelo utilizador
+        queue: fila onde vão ser empurrados os blocos de trabalhos
+        lock: 
+        queue_size: tamanho da queue em bytes
+    """
     while True:
         item = queue.get()
         lock.acquire()
-        queueSize.value -= numero_bytes_string(item)
+        queue_size.value -= size_string_bytes(item)
         lock.release()
         if item == STOP_TOKEN:
-            queue.put(STOP_TOKEN) #Põe se de volta na queue para informar os outros consumidores
+            queue.put(STOP_TOKEN) #Põe se de volta na queue para informar os restantes consumidores
             break
         else:
-            lock.acquire()
             grepwc(args, texto=item)
-            lock.release()
 
 
 def interval(args, sig, null):
-    if args.c:
-        print(f'Número de ocorrências da palavra {args.palavra}: {palavras_encontradas.value}')
-    if args.l:
-        print(f'Número de linhas resultante da palavra {args.palavra}: {linhas_encontradas.value}')
+    """
+    Impressão dos resultados de 3 em 3 segundos
 
-    print(f'Número de ficheiros completamente processados: {files_done.value}')
-    print(f'Número de ficheiros ainda em processamento: {len(args.ficheiros) - files_done.value}')
-    print(f'Tempo decorrido desdo o início da execução: {seconds_to_micro(time() - inicio)}\n')
+    Args:
+        args: objeto da classe ArgumentParser, com os argumentos dados pelo utilizador
+        sig: obrigatório pelo sinal
+        null: obrigatório pelo sinal
+    """
+    if args.c:
+        print(f'{Fore.GREEN}{palavras_encontradas.value}{Fore.RESET} ocorrências da palavra {Fore.CYAN}{args.palavra}{Fore.RESET}')
+    if args.l:
+        print(f'{Fore.GREEN}{linhas_encontradas.value}{Fore.RESET} linhas em que ocorre a palavra {Fore.CYAN}{args.palavra}{Fore.RESET}')
+
+    print(f'{Fore.LIGHTRED_EX}{files_done.value}{Fore.RESET} ficheiros completamente processados')
+    print(f'{Fore.LIGHTRED_EX}{len(args.ficheiros) - files_done.value}{Fore.RESET} ficheiros ainda em processamento')
+    print(f'{Fore.LIGHTYELLOW_EX}{seconds_to_micro(time() - inicio)}{Fore.RESET} μs desde o início da execução\n')
 
 
 def sigint(sig, null):
@@ -309,27 +353,21 @@ def pgrepwc(args):
     #Se a opção -e for utilizada
     if args.bytes:
         queue = Queue()
-        queueSize = Value('i', 0) #Valor para verificar que o tamanho da queue não contenha mais que 1MB de dados
-
-        lock = Lock()
+        queue_size = Value('i', 0) #Valor para verificar que o tamanho da queue
 
         for i in range(args.processos):
-            processos_filho.append(Process(target=consumidor, args = (args, queue, lock, queueSize)))
+            processos_filho.append(Process(target=consumidor, args = (args, queue, queue_size)))
         
         for cons in processos_filho:
             cons.start()
         
-        produtor(args.ficheiros, queue, args.bytes, queueSize)
-
-        # for cons in processos_filho:
-        #     cons.join()
+        produtor(args, queue, queue_size)
 
     else:
         tarefas = dividir_tarefas(args)
 
         for i in range(args.processos):
-            processos_filho.append(Process(target=grepwc,
-                                        args = (args, tarefas[i])))
+            processos_filho.append(Process(target=grepwc, args = (args, tarefas[i])))
 
         for i in range(args.processos):
             processos_filho[i].start()
@@ -342,11 +380,13 @@ def main():
     print('Programa: pgrepwc_processos.py\n')
 
     args = obter_argumentos()
-
-    signal(SIGINT, sigint)
-
+    
+    #Alarme que permite fazer a impressão dos resultados de 3 em 3 segundos
     signal(SIGALRM, partial(interval, args))
     setitimer(ITIMER_REAL, 3, 3)
+
+    #Quando o SIGINT (CTRL+C) é pressionado
+    signal(SIGINT, sigint)
 
     #Se o número de processos for igual a 1 então o processo pai faz a pesquisa
     if args.processos == 1:
@@ -354,14 +394,15 @@ def main():
     else:   
         pgrepwc(args)
 
+    #No fim da execução, imprime-se o resultado final da pesquisa
     if args.c:
-        print(f'Número de ocorrências da palavra {args.palavra}: {palavras_encontradas.value}')
+        print(f'{Fore.GREEN}{palavras_encontradas.value}{Fore.RESET} ocorrências da palavra {Fore.CYAN}{args.palavra}{Fore.RESET}')
     if args.l:
-        print(f'Número de linhas resultante da palavra {args.palavra}: {linhas_encontradas.value}')
+        print(f'{Fore.GREEN}{linhas_encontradas.value}{Fore.RESET} linhas em que ocorre a palavra {Fore.CYAN}{args.palavra}{Fore.RESET}')
 
-    print(f'Número de ficheiros completamente processados: {files_done.value}')
-    print(f'Número de ficheiros ainda em processamento: {len(args.ficheiros) - files_done.value}')
-    print(f'Tempo decorrido desdo o início da execução: {seconds_to_micro(time() - inicio)}')
+    print(f'{Fore.LIGHTRED_EX}{files_done.value}{Fore.RESET} ficheiros completamente processados')
+    print(f'{Fore.LIGHTRED_EX}{len(args.ficheiros) - files_done.value}{Fore.RESET} ficheiros ainda em processamento')
+    print(f'{Fore.LIGHTYELLOW_EX}{seconds_to_micro(time() - inicio)}{Fore.RESET} μs desde o início da execução\n')
 
 if __name__ == "__main__":
     main()
