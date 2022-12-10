@@ -22,6 +22,7 @@ palavras_encontradas = Value('i', 0) #Variável em memória partilhada com o nú
 linhas_encontradas = Value('i', 0) #Variável em memória partilhada com o número de linhas em que houve ocorrências
 files_done = Value('i', 0) #Variável em memória partilhada com o número de ficheiros completamente processados
 
+
 def seconds_to_micro(sec):
     """
     Obtém segundos e retorna em microsegundos
@@ -31,6 +32,7 @@ def seconds_to_micro(sec):
         Número em microsegundos
     """
     return int(sec*1000000)
+
 
 def obter_argumentos():
     """
@@ -71,6 +73,7 @@ def obter_argumentos():
 
     return args
 
+
 def remover_acentos(texto):
     """
     Remove acentos a uma string
@@ -80,6 +83,7 @@ def remover_acentos(texto):
         string do texto sem acentos
     """
     return unicodedata.normalize('NFKD', texto).encode('ASCII', 'ignore').decode("utf-8")
+
 
 def pesquisa_palavras(palavra, texto):
     """
@@ -108,8 +112,7 @@ def pesquisa_palavras(palavra, texto):
         #Se a palavra estiver em linha damos append
         if palavra in linha:
             linhas_encontradas.value += 1
-        
-        
+
         
 def grepwc(args, ficheiros=[], texto=''):
     """
@@ -166,6 +169,7 @@ def min_bytes_processo(tarefas, dict):
                 counter += dict.get(f)
             res.append(counter)
     return res.index(min(res))
+
 
 def dividir_tarefas(args):
     """
@@ -269,14 +273,15 @@ def produtor(args, queue, queue_size):
                 #Enquanto a queue tiver mais que 1MB em tamanho
                 while queue_size.value > 1000000:
                     pass
+
                 queue_size.value += size_string_bytes(list[:-1])
                 queue.put(list[:-1]) #Inserir na queue a lista exceto a última linha (que originou o bloco de trabalho a ter mais que o número máximo de bytes)
                 list = list[-1:] #Inicializa a lista apenas com a linha
 
+            #Se o SIGINT (CTRL+C) tiver sido pressionado anteriormente, é feita a pesquisa até ao último bloco
             if end.value == 1:
                 queue.put(list)
                 break
-
         if end.value == 1:
             break
 
