@@ -10,7 +10,7 @@ from re import findall, compile
 from functools import partial
 from time import time
 
-from colorama import Fore, Style, init
+from colorama import Fore, init
 init() # Inicialização colorama
 
 inicio = time()
