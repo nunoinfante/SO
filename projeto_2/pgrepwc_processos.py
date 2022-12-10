@@ -1,14 +1,14 @@
 ### Grupo: SO-TI-38
 ### Aluno 1: Nuno Infante (fc55411)
 
-from multiprocessing import Process, Array, Queue, Lock, Value
-from re import findall, compile
-import argparse
 import unicodedata
+import argparse
 import os
 from signal import signal, SIGINT, setitimer, SIGALRM, ITIMER_REAL
-from time import time
+from multiprocessing import Process, Queue, Lock, Value
+from re import findall, compile
 from functools import partial
+from time import time
 
 from colorama import Fore, Style, init
 init() # Inicialização colorama
