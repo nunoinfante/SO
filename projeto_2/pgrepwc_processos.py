@@ -10,7 +10,7 @@ from re import findall, compile
 from functools import partial
 from time import time
 
-from colorama import Fore, init
+from colorama import Fore, init, ansi
 init() # Inicialização colorama
 
 inicio = time()
@@ -60,6 +60,10 @@ def obter_argumentos():
 
     #Guardar os valores dos argumentos dados no objeto args
     args = parser.parse_args()
+
+    #Caso seja usada a opção args.bytes e seja definida 1 processo (omissão)
+    if args.processos <= 1 and args.bytes:
+        raise Exception('Invalid number of processes')
 
     #Caso o número de processos específicado seja menor ou igual a 0, levanta-se uma exceção
     if args.processos <= 0:
@@ -183,7 +187,7 @@ def dividir_tarefas(args):
 
     num_ficheiros = len(args.ficheiros)
     num_processos = args.processos
-    tarefas =  [[]*num_processos for i in range(num_processos)]
+    tarefas = [[]*num_processos for i in range(num_processos)]
 
     #Se o número de processos for maior ou igual que o número de ficheiros então o número de processos é o número de ficheiros a pesquisar
     if num_processos >= num_ficheiros:
@@ -201,7 +205,7 @@ def dividir_tarefas(args):
         while len(dict) != 0:
             index_min = min_bytes_processo(tarefas, dict2) #Index do processo com menor tamanho total de ficheiros
             tarefas[index_min].append(list(dict.keys())[-1]) #Acrescentar ao index obtido o nome do ficheiro com menor tamanho
-            dict.popitem() # Retirar o par key:value com menor tamanho
+            dict.popitem() # Retirar o par key:value com maior tamanho
 
     return tarefas
 
@@ -400,14 +404,15 @@ def main():
         pgrepwc(args)
 
     #No fim da execução, imprime-se o resultado final da pesquisa
+    print(f'{Fore.LIGHTMAGENTA_EX}Resultado:{Fore.RESET}')
     if args.c:
-        print(f'{Fore.GREEN}{palavras_encontradas.value}{Fore.RESET} ocorrências da palavra {Fore.CYAN}{args.palavra}{Fore.RESET}')
+        print(f' {Fore.GREEN}{palavras_encontradas.value}{Fore.RESET} ocorrências da palavra {Fore.CYAN}{args.palavra}{Fore.RESET}')
     if args.l:
-        print(f'{Fore.GREEN}{linhas_encontradas.value}{Fore.RESET} linhas em que ocorre a palavra {Fore.CYAN}{args.palavra}{Fore.RESET}')
+        print(f' {Fore.GREEN}{linhas_encontradas.value}{Fore.RESET} linhas em que ocorre a palavra {Fore.CYAN}{args.palavra}{Fore.RESET}')
 
-    print(f'{Fore.LIGHTRED_EX}{files_done.value}{Fore.RESET} ficheiros completamente processados')
-    print(f'{Fore.LIGHTRED_EX}{len(args.ficheiros) - files_done.value}{Fore.RESET} ficheiros ainda em processamento')
-    print(f'{Fore.LIGHTYELLOW_EX}{seconds_to_micro(time() - inicio)}{Fore.RESET} μs desde o início da execução\n')
+    print(f' {Fore.LIGHTRED_EX}{files_done.value}{Fore.RESET} ficheiros completamente processados')
+    print(f' {Fore.LIGHTRED_EX}{len(args.ficheiros) - files_done.value}{Fore.RESET} ficheiros ainda em processamento')
+    print(f' {Fore.LIGHTYELLOW_EX}{seconds_to_micro(time() - inicio)}{Fore.RESET} μs desde o início da execução\n')
 
 if __name__ == "__main__":
     main()
