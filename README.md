@@ -1,55 +1,10 @@
-## ChessBook
+# pgrepwc command
 
+## Assignement:
+[First Phase](https://github.com/nunoinfante/SO/tree/master/projeto_1)
+[Second Phase](https://github.com/nunoinfante/SO/tree/master/projeto_2)
 
-# Grupo:
-    Diogo Ferreira 53330
-    Nuno Infante 55411
-
-# Estimativa de contributo:
-    
-    1º Fase:
-        Diogo Ferreira - 50%
-        Nuno Infante - 50%
-
-    2º Fase:
-        Diogo Ferreira - 0% (Devido à avaliação negativa no Quiz)
-        Nuno Infante - 100%
-
-# Funcionalidades Implementadas:
-    
-    1º Fase:
-        - Classe ChessPlayer
-        - Classe ChessGame
-        - Classe ChessMove
-        - Classe ChessBoard
-        - Classe ChessPosition
-        - Classe ChessPiece
-        - Enum Color
-        - Enum ChessPieceKind
-        - Exceção IllegalMoveException
-        - Interface IDataMapper
-        - Classe ChessGameDM
-        - Classe ChessPlayerDM
-   
-        2º Fase:
-        - Login (caso o user já exista ou não)
-        - Register (caso o user já exista ou não)
-        - Current Games (página feita e só funciona o "Start New Game" quando não existem users com o nome específicado)
-
-    
-    2º Fase:
-        - Login (caso o user já exista ou não)
-        - Register (caso o user já exista ou não)
-        - Current Games (página feita e só funciona o "Start New Game" quando não existem users com o nome específicado)
-
-# Funcionalidades Não Implementadas:
-    
-    1º Fase:
-        - update() na classe ChessGameDM não funciona corretamente
-
-    2º Fase:
-        - Current Games (não funciona caso o número de users com o nome especificado seja igual ou maior que 1)
-        - As páginas em relação ao jogo (com o tabuleiro) não foram feitas
-
-# Informações adicionais:
-    - Devido à falta de tempo por causa dos exames e da falta do meu colega devido 
+## About:
+The main goal of this project was to develop a new version of the command grep, with added functionalities such as the option to search using processes or threads (and how many of them). Other functionalities like being able to distribute text files through processes taking into account the size of the files. The project was developed in two phases:
+*The first one focused on developing the command pgrepwc (parallel grep with counting), a new version of the command grep with new functionalities and that parallelizes searches.
+*The second focused on extending the previous phase with added funcionalities. Such funcionalities include a more equitable division of files between processes and a "special" parallelization where each search block cannot exceed the defined number of bytes.
