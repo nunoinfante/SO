@@ -1,7 +1,7 @@
 # pgrepwc command
 
 ## Assignement:
-[First Phase](https://github.com/nunoinfante/SO/tree/master/projeto_1)
+[First Phase](https://github.com/nunoinfante/SO/tree/master/projeto_1)  
 [Second Phase](https://github.com/nunoinfante/SO/tree/master/projeto_2)
 
 ## About:
